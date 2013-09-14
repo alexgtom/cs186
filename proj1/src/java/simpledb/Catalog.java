@@ -15,6 +15,10 @@ import java.util.*;
  */
 
 public class Catalog {
+    private HashMap<Integer, DbFile> fileMap = new HashMap<Integer, DbFile>();
+    private HashMap<Integer, String> nameMap = new HashMap<Integer, String>();
+    private HashMap<Integer, String> pkMap = new HashMap<Integer, String>();
+    private HashMap<String, Integer> idMap = new HashMap<String, Integer>();
 
     /**
      * Constructor.
@@ -30,11 +34,14 @@ public class Catalog {
      * @param file the contents of the table to add;  file.getId() is the identfier of
      *    this file/tupledesc param for the calls getTupleDesc and getFile
      * @param name the name of the table -- may be an empty string.  May not be null.  If a name
+     *    conflict exists, use the last table to be added as the table for a given name.
      * @param pkeyField the name of the primary key field
-     * conflict exists, use the last table to be added as the table for a given name.
      */
     public void addTable(DbFile file, String name, String pkeyField) {
-        // some code goes here
+        fileMap.put(file.getId(), file);
+        nameMap.put(file.getId(), name);
+        pkMap.put(file.getId(), pkeyField);
+        idMap.put(name, file.getId());
     }
 
     public void addTable(DbFile file, String name) {
@@ -58,7 +65,12 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        Integer value = idMap.get(name);
+
+        if (value == null)
+            throw new NoSuchElementException();
+
+        return value;
     }
 
     /**
@@ -69,7 +81,7 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        return getDbFile(tableid).getTupleDesc();
     }
 
     /**
@@ -80,29 +92,38 @@ public class Catalog {
      */
     public DbFile getDbFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        DbFile file = fileMap.get(tableid);
+
+        if (file == null)
+            throw new NoSuchElementException();
+
+        return file;
     }
 
     public String getPrimaryKey(int tableid) {
         // some code goes here
-        return null;
+        return pkMap.get(tableid);
     }
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        return fileMap.keySet().iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
-        return null;
+        return nameMap.get(id);
     }
-    
+
     /** Delete all tables from the catalog */
     public void clear() {
         // some code goes here
+        fileMap.clear();
+        nameMap.clear();
+        pkMap.clear();
+        idMap.clear();
     }
-    
+
     /**
      * Reads the schema from a file and creates the appropriate tables in the database.
      * @param catalogFile
@@ -112,7 +133,7 @@ public class Catalog {
         String baseFolder=new File(catalogFile).getParent();
         try {
             BufferedReader br = new BufferedReader(new FileReader(new File(catalogFile)));
-            
+
             while ((line = br.readLine()) != null) {
                 //assume line is of the format name (field type, field type, ...)
                 String name = line.substring(0, line.indexOf("(")).trim();
