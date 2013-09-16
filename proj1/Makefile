@@ -1,5 +1,5 @@
 unittest:
-	ant runtest -Dtest=CatalogTest
+	ant runtest -Dtest=HeapFileReadTest
 
 watch:
 	watchr unittest.watch
