@@ -98,7 +98,7 @@ public class TupleDesc implements Serializable {
      */
     public String getFieldName(int i) throws NoSuchElementException {
         // some code goes here
-        return null;
+        return tdList.get(i).fieldName;
     }
 
     /**
