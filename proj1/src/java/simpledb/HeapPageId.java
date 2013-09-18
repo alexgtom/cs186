@@ -41,7 +41,7 @@ public class HeapPageId implements PageId {
      */
     public int hashCode() {
         // some code goes here
-        return Integer.parseInt("" + tableId + "" + pgNo);
+        return tableId + pgNo;
     }
 
     /**
