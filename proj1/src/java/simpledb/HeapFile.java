@@ -122,6 +122,11 @@ public class HeapFile implements DbFile {
         private Iterator<Tuple>pageIt;
         private HeapPage currentPage;
         private boolean opened;
+        private TransactionId tid;
+
+        public HeapFileIterator(TransactionId tid) {
+            this.tid = tid;
+        }
 
         public void open()
             throws DbException, TransactionAbortedException {
@@ -146,7 +151,7 @@ public class HeapFile implements DbFile {
                 throw new NoSuchElementException();
 
             currentPage = (HeapPage) Database.getBufferPool().getPage(
-                null,
+                tid,
                 new HeapPageId(getId(), pageNo),
                 null
             );
@@ -186,7 +191,7 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
         // some code goes here
-        return new HeapFileIterator();
+        return new HeapFileIterator(tid);
     }
 
 }
