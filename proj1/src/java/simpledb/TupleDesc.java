@@ -98,7 +98,11 @@ public class TupleDesc implements Serializable {
      */
     public String getFieldName(int i) throws NoSuchElementException {
         // some code goes here
-        return tdList.get(i).fieldName;
+        try {
+            return tdList.get(i).fieldName;
+        } catch (IndexOutOfBoundsException e) {
+            throw new NoSuchElementException();
+        }
     }
 
     /**
@@ -113,7 +117,11 @@ public class TupleDesc implements Serializable {
      */
     public Type getFieldType(int i) throws NoSuchElementException {
         // some code goes here
-        return tdList.get(i).fieldType;
+        try {
+            return tdList.get(i).fieldType;
+        } catch (IndexOutOfBoundsException e) {
+            throw new NoSuchElementException();
+        }
     }
 
     /**
