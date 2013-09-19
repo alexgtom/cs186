@@ -1,5 +1,6 @@
 unittest:
-	ant runtest -Dtest=HeapFileReadTest
+	ant test
+	#ant runtest -Dtest=HeapFileReadTest
 	ant runsystest -Dtest=ScanTest
 
 watch:
