@@ -98,7 +98,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-        return (int) f.length() / BufferPool.PAGE_SIZE;
+        return (int) Math.ceil(f.length() / BufferPool.PAGE_SIZE);
     }
 
     // see DbFile.java for javadocs
@@ -120,7 +120,6 @@ public class HeapFile implements DbFile {
     private class HeapFileIterator implements DbFileIterator {
         private int pageNo;
         private Iterator<Tuple>pageIt;
-        private HeapPage currentPage;
         private boolean opened;
         private TransactionId tid;
 
@@ -131,56 +130,87 @@ public class HeapFile implements DbFile {
         public void open()
             throws DbException, TransactionAbortedException {
             pageNo = 0;
-            pageIt = getNextPageIterator();
-            currentPage = null;
+            
+            int i = findNextIteratorIndex(0);
+
+            if (i == -1)
+                pageIt = null;
+            else
+                pageIt = getIteratorAtIndex(i);
+
             opened = true;
         }
+
         public boolean hasNext()
             throws DbException, TransactionAbortedException {
             if (!opened)
                 return false;
-            return pageIt != null;
-        }
 
-        private Iterator<Tuple> getNextPageIterator()
-            throws DbException, TransactionAbortedException, NoSuchElementException {
+            if (pageIt == null)
+                return false;
 
-            Iterator<Tuple> it = null;
+            // if has next, then return true
+            if (pageIt.hasNext())
+                return true;
 
             if (pageNo >= numPages())
-                throw new NoSuchElementException();
+                return false;
 
-            currentPage = (HeapPage) Database.getBufferPool().getPage(
+            // if dosent have next, then search for the next iterator
+            int i = findNextIteratorIndex(pageNo + 1);
+            if (i == -1)
+                return false;
+            else
+                // reach end of pages and found no tuples
+                return true;
+        }
+
+        private Iterator<Tuple> getIteratorAtIndex(int i)
+            throws DbException, TransactionAbortedException, NoSuchElementException {
+            HeapPage currentPage = (HeapPage) Database.getBufferPool().getPage(
                 tid,
-                new HeapPageId(getId(), pageNo),
+                new HeapPageId(getId(), i),
                 null
             );
-            it = currentPage.iterator();
-            pageNo++;
+            return currentPage.iterator();
+        } 
 
-            if (!it.hasNext())
-                return getNextPageIterator();
-            else
-                return it;
+        private int findNextIteratorIndex(int i) 
+            throws DbException, TransactionAbortedException, NoSuchElementException {
+            for(; i < numPages(); i++) {
+                if(getIteratorAtIndex(i).hasNext())
+                    return i;
+            }
+
+            return -1;
         }
 
         public Tuple next()
             throws DbException, TransactionAbortedException, NoSuchElementException {
 
-            if (!opened)
+            if (!opened || pageIt == null || pageNo >= numPages())
                 throw new NoSuchElementException();
 
-            if (pageIt == null)
-                pageIt = getNextPageIterator();
-
-            Tuple next = pageIt.next();
-            if (!pageIt.hasNext())
-                pageIt = null;
-            return next;
+            // current iterator has tuples
+            if (pageIt.hasNext())
+                return pageIt.next();
+            
+            // current iterator has no more tuples, find next one
+            pageNo++;
+            int i = findNextIteratorIndex(pageNo);
+            if (i == -1)
+                // reach end of pages and found no tuples
+                throw new NoSuchElementException("No more tuples");
+            else {
+                pageNo = i;
+                pageIt = getIteratorAtIndex(i);
+                return pageIt.next();
+            }
         }
 
         public void rewind() throws DbException, TransactionAbortedException {
-            pageNo = 0;
+            close();
+            open();
         }
 
         public void close() {

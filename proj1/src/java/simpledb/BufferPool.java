@@ -55,9 +55,13 @@ public class BufferPool {
         // some code goes here
         if (pool.size() >= maxPages)
             throw new DbException("BufferPool has reached limit of " + maxPages);
+        Page page = pool.get(pid);
+
+        if (page != null)
+            return page;
 
         Catalog catalog = Database.getCatalog();
-        Page page = catalog.getDbFile(pid.getTableId()).readPage(pid);
+        page = catalog.getDbFile(pid.getTableId()).readPage(pid);
         pool.put(pid, page);
         return page;
     }
