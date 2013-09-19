@@ -94,7 +94,10 @@ public class Tuple implements Serializable {
         // some code goes here
         String s = "";
         for(int i = 0; i < fields.length; i++) {
-            s += fields[i].toString();
+            if (fields[i] == null)
+                s += "null";
+            else 
+                s += fields[i].toString();
             if (i < fields.length - 1)
                 s += "\t";
         }
