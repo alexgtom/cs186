@@ -305,7 +305,9 @@ public class HeapPage implements Page {
         for(int i = 0; i < tuples.length; i++)
             if (isSlotUsed(i))
                 l.add(tuples[i]);
-        return l.iterator();
+        // unmodifableList has an interator that throws 
+        // UnsupportedOperationException on remove
+        return Collections.unmodifiableList(l).iterator();
     }
 
 }
