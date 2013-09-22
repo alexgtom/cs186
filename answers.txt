@@ -1,0 +1,14 @@
+Describe any design decisions you made. These may be minimal for Project 1.
+ - I tried to implement everything with a HashMap to keep performance high.
+
+Discuss and justify any changes you made to the API.
+ - No changes were made to the API
+
+Describe any missing or incomplete elements of your code.
+ - Nothing is missing or incomplete
+
+Describe briefly who worked on what (if you worked with a partner).
+ - I worked on it myself
+
+Describe how long you (and your partner) spent on the project, and whether there was anything you found particularly difficult or confusing.
+ - I spent a weekend on the project. I found writing HeapFile.iterator to be difficult.
