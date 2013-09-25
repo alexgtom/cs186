@@ -137,8 +137,6 @@ public class TupleDesc implements Serializable {
         // some code goes here
         for(int i = 0; i < tdList.size(); i++) {
             String fieldName = tdList.get(i).fieldName;
-            if (fieldName == null && fieldName == name)
-                return i;
             if (fieldName != null && fieldName.equals(name))
                 return i;
         }
