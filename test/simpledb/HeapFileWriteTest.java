@@ -3,6 +3,7 @@ package simpledb;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import java.util.*;
 
 import static org.junit.Assert.*;
 import junit.framework.JUnit4TestAdapter;
@@ -41,6 +42,26 @@ public class HeapFileWriteTest extends TestUtil.CreateHeapFile {
         // and one more, just for fun...
         empty.insertTuple(tid, Utility.getHeapTuple(0, 2));
         assertEquals(3, empty.numPages());
+    }
+
+    /**
+     * Unit test for HeapFile.deleteTuple()
+     */
+    @Test public void deleteTuple() throws Exception {
+        // we should be able to add 504 tuples on an empty page.
+        ArrayList<Tuple> tupleList = new ArrayList<Tuple>();
+        for (int i = 0; i < 504; ++i) {
+            Tuple t = Utility.getHeapTuple(i, 2);
+            tupleList.add(t);
+            empty.insertTuple(tid, t);
+            assertEquals(1, empty.numPages());
+        }
+
+        for (int i = 0; i < tupleList.size(); ++i) {
+            empty.deleteTuple(tid, tupleList.get(i));
+        }
+        HeapPage p = (HeapPage) empty.readPage(new HeapPageId(empty.getId(), 0));
+        assertEquals(504, p.getNumEmptySlots());
     }
 
     /**
