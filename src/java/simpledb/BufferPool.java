@@ -32,7 +32,23 @@ public class BufferPool {
     public BufferPool(int numPages) {
         // some code goes here
         this.maxPages = numPages;
-        this.pool = new HashMap<PageId, Page>(numPages);
+        // This LinkedHashMap behaives like and LRU
+        this.pool = new LinkedHashMap<PageId, Page>(maxPages + 1, .75F, true) {
+            public boolean removeEldestEntry(Map.Entry eldest) {
+                boolean removeEldest = size() > maxPages;
+
+                if (removeEldest) {
+                    // if we remove the page, flush it
+                    try {
+                        flushPage((PageId) eldest.getKey());
+                    } catch (IOException e) {
+                        System.err.println(e);
+                    }
+                }
+
+                return removeEldest;
+            }
+        };
     }
 
     /**
@@ -53,8 +69,10 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        if (pool.size() >= maxPages)
-            throw new DbException("BufferPool has reached limit of " + maxPages);
+        
+        // we dont need to check this anymore becuase have an eviction policy
+        //if (pool.size() >= maxPages)
+        //    throw new DbException("BufferPool has reached limit of " + maxPages);
         Page page = pool.get(pid);
 
         if (page != null)
@@ -157,7 +175,9 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for proj1
-
+         for (Iterator<PageId> pageIdIter = pool.keySet().iterator(); pageIdIter.hasNext();) {
+             flushPage(pageIdIter.next());
+         }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -177,6 +197,13 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for proj1
+        Catalog catalog = Database.getCatalog();
+        DbFile pageFile = catalog.getDbFile(pid.getTableId());
+        Page page = pageFile.readPage(pid);
+        if (page.isDirty() != null) {
+            page.markDirty(false, page.isDirty());
+            pageFile.writePage(page);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -193,6 +220,8 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for proj1
+
+        // this method is not necessary due to my LRU implementation
     }
 
 }
