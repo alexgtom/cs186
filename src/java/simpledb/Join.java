@@ -112,6 +112,8 @@ public class Join extends Operator {
 
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
+        if (stop)
+            return null;
         if (child1.hasNext() && child1tuple == null) {
             child1tuple = child1.next();
         }
@@ -126,15 +128,16 @@ public class Join extends Operator {
                 t = mergeTuples(child1tuple, child2tuple);
 
             if (!child2.hasNext()) {
-                if (child1.hasNext()) {
-                    child1tuple = child1.next();
-                } else {
+                if (!child1.hasNext()) {
+                    // !child1.hasNext() and !child2.hasNext()
                     if (t != null) {
+                        stop = true;
                         return t;
                     } else {
-                        // !child1.hasNext() and !child2.hasNext()
                         return null;
                     }
+                } else {
+                    child1tuple = child1.next();
                 }
                 child2.rewind();
             }
