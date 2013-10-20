@@ -222,6 +222,8 @@ public class BufferPool {
         // not necessary for proj1
 
         // this method is not necessary due to my LRU implementation
+        pool.put(null, null);
+        pool.remove(null);
     }
 
 }
