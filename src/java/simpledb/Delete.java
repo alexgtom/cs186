@@ -12,6 +12,7 @@ public class Delete extends Operator {
 
     private TransactionId tid;
     private DbIterator child;
+    private boolean deleted;
 
     /**
      * Constructor specifying the transaction that this delete belongs to as
@@ -26,6 +27,7 @@ public class Delete extends Operator {
         // some code goes here
         this.tid = t;
         this.child = child;
+        this.deleted = false;
     }
 
     public TupleDesc getTupleDesc() {
@@ -62,6 +64,11 @@ public class Delete extends Operator {
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
         BufferPool pool = Database.getBufferPool();
+
+        if (!deleted)
+            deleted = true;
+        else
+            return null;
 
         int tupleCount = 0;
         while(child.hasNext()) {
