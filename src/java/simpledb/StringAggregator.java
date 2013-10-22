@@ -14,8 +14,8 @@ public class StringAggregator implements Aggregator {
     private int afield;
     private Op op;
 
-    private HashMap<Field, ArrayList<Field>> groupsMap;
-    private ArrayList<Field> nogroupsList;
+    private HashMap<Field, ArrayList<Field>> groups;
+    private ArrayList<Field> nogroup;
 
     /**
      * Aggregate constructor
@@ -33,9 +33,9 @@ public class StringAggregator implements Aggregator {
         this.op = what;
 
         if(gbfield == Aggregator.NO_GROUPING)
-            nogroupsList = new ArrayList<Field>();
+            nogroup = new ArrayList<Field>();
         else
-            this.groupsMap = new HashMap<Field, ArrayList<Field>>();
+            this.groups = new HashMap<Field, ArrayList<Field>>();
     }
 
     /**
@@ -43,21 +43,18 @@ public class StringAggregator implements Aggregator {
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
-        if(this.gbfield == Aggregator.NO_GROUPING)
-            nogroupsList.add(tup.getField(this.afield));
+        if(this.gbfield != Aggregator.NO_GROUPING) {
+            Field group = tup.getField(this.gbfield);
+            Field value = tup.getField(this.afield);
 
-        else{
-            Field theGroup = tup.getField(this.gbfield);
-            Field theValue = tup.getField(this.afield);
+            ArrayList<Field> values = groups.get(group);
+            if(values == null)
+                values = new ArrayList<Field>();
 
-            ArrayList<Field> valuesList = groupsMap.get(theGroup);
-            if(valuesList != null)
-                valuesList.add(theValue);
-            else{
-                valuesList = new ArrayList<Field>();
-                valuesList.add(theValue);
-            }
-            groupsMap.put(theGroup,valuesList);
+            values.add(value);
+            groups.put(group,values);
+        } else {
+            nogroup.add(tup.getField(this.afield));
         }
     }
 
@@ -70,37 +67,26 @@ public class StringAggregator implements Aggregator {
      *   aggregate specified in the constructor.
      */
     public DbIterator iterator() {
-        if(this.gbfield == Aggregator.NO_GROUPING){
-            int count = nogroupsList.size();
+        ArrayList<Tuple> tuples = new ArrayList<Tuple>();
+        TupleDesc td;
 
-            TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
-            Tuple t = new Tuple(td);
-            t.setField(0, new IntField(count));
+        if (this.gbfield != Aggregator.NO_GROUPING){
+            td = new TupleDesc(new Type[] { gbfieldtype, Type.INT_TYPE });
 
-            ArrayList<Tuple> tupArr = new ArrayList<Tuple>();
-            tupArr.add(t);
-            return new TupleIterator(td, tupArr);
-        }
-
-        else{
-            ArrayList<Tuple> tupArr = new ArrayList<Tuple>();
-            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype, Type.INT_TYPE});
-
-            Set keys = groupsMap.keySet();
-            Iterator<Field> keysIterator = keys.iterator();
-            while(keysIterator.hasNext()){
-                Field f = keysIterator.next();
-                ArrayList valuesList = groupsMap.get(f);
-                int count = valuesList.size();
-
+            for(Field f : groups.keySet()) {
                 Tuple t = new Tuple(td);
                 t.setField(0, f);
-                t.setField(1, new IntField(count));
-                tupArr.add(t);
+                t.setField(1, new IntField(groups.get(f).size()));
+                tuples.add(t);
             }
+        } else {
+            td = new TupleDesc(new Type[]{Type.INT_TYPE});
+            Tuple t = new Tuple(td);
+            t.setField(0, new IntField(nogroup.size()));
 
-            return new TupleIterator(td, tupArr);
+            tuples.add(t);
         }
+        return new TupleIterator(td, tuples);
     }
 
 }
