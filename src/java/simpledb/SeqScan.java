@@ -103,7 +103,23 @@ public class SeqScan implements DbIterator {
         if (dbFile == null)
             return null;
         
-        return dbFile.getTupleDesc();
+        TupleDesc fileDesc = dbFile.getTupleDesc();
+        int numFields = fileDesc.numFields();
+        
+        String[] names = new String[numFields];
+        Type[] types = new Type[numFields];
+
+        for (int i = 0; i < numFields; i++) {
+            types[i] = fileDesc.getFieldType(i);
+            names[i] = tableAlias + "." + fileDesc.getFieldName(i);
+        }
+
+        return new TupleDesc(types, names);
+
+    }
+
+    private static String representPossiblyNullString(String string) {
+        return (string == null) ? "null" : string;
     }
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
