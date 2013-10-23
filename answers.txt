@@ -1,14 +1,20 @@
-Describe any design decisions you made. These may be minimal for Project 1.
- - I tried to implement everything with a HashMap to keep performance high.
-
-Discuss and justify any changes you made to the API.
- - No changes were made to the API
-
+Describe any design decisions you made, including your choice of page eviction policy. If you used something other than a nested-loops join, describe the tradeoffs of the algorithm you chose.
+ - I implemented an LRU page eviction policy. I implemented joins using the naive
+ joining algorithm which loops through each row in each table manually. Aggregates
+ were implemented by determining which type of operation needs to be done and the work
+ for that operation was delegated to another function. 
+Discuss and justify any changes you made to the API. 
+ - No changes.
 Describe any missing or incomplete elements of your code.
- - Nothing is missing or incomplete
+ - Nothing missing
+Describe how long you spent on the project, and whether there was anything you found particularly difficult or confusing.
+ - Spent about three days on the project. Aggregate operators was pretty confusing.
 
-Describe briefly who worked on what (if you worked with a partner).
- - I worked on it myself
 
-Describe how long you (and your partner) spent on the project, and whether there was anything you found particularly difficult or confusing.
- - I spent a weekend on the project. I found writing HeapFile.iterator to be difficult.
+
+Query runtimes:
+Query 1: 1.6 seconds
+Query 2: over 23 minutes (I manually killed the program)
+Query 3: over 25 minutes (I manually killed the program)
+
+Total Time: 48 minutes and 1.6 seconds
