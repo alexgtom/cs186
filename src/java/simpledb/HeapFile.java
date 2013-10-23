@@ -80,6 +80,7 @@ public class HeapFile implements DbFile {
             byte[] page = new byte[BufferPool.PAGE_SIZE];
             fp.seek(BufferPool.PAGE_SIZE * pid.pageNumber());
             fp.read(page, 0, BufferPool.PAGE_SIZE);
+            fp.close();
             return new HeapPage(
                 new HeapPageId(pid.getTableId(), pid.pageNumber()), page);
         } catch(IOException e) {
