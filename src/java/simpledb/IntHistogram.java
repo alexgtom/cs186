@@ -4,6 +4,13 @@ package simpledb;
  */
 public class IntHistogram {
 
+    private int numBuckets;
+    private int min;
+    private int max;
+    private int ntups;
+    private int[] bucketHeight;
+    private double interval;
+
     /**
      * Create a new IntHistogram.
      * 
@@ -22,6 +29,24 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.min = min;
+        this.max = max;
+        this.ntups = 0;
+        this.bucketHeight = new int[buckets];
+        this.interval = (double) Math.abs(max - min) / buckets;
+        this.numBuckets = buckets;
+    }
+
+    private int getBucketNum(int v) {
+        int bucketNum = (int) ((v - min) / interval);
+        if (bucketNum == numBuckets && bucketNum > 0)
+            return bucketNum - 1;
+        else
+            return bucketNum;
+    }
+
+    private double getRight(int bucketNum) {
+        return (bucketNum + 1) * interval;
     }
 
     /**
@@ -30,6 +55,30 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        bucketHeight[getBucketNum(v)]++;
+        ntups++;
+    }
+
+    private double selectivityEq(int v) {
+        if (v > max)
+            return 0.0;
+        if (v < min)
+            return 0.0;
+        return bucketHeight[getBucketNum(v)] / (interval * ntups);
+    }
+
+    private double selectivityGt(int v) {
+        if (v > max)
+            return 0.0;
+        if (v < min)
+            return 1.0;
+        int bucketNum = getBucketNum(v);
+        double rightBuckets = 0.0f;
+        for(int i = bucketNum + 1; i < numBuckets; i++) {
+            rightBuckets += (double) bucketHeight[i] / ntups;
+        }
+
+        return bucketHeight[bucketNum] * (getRight(bucketNum) - v) / (interval * ntups) + rightBuckets;
     }
 
     /**
@@ -43,9 +92,22 @@ public class IntHistogram {
      * @return Predicted selectivity of this particular operator and value
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
-
     	// some code goes here
-        return -1.0;
+        if (op == Predicate.Op.EQUALS)
+            return selectivityEq(v);
+        if (op == Predicate.Op.GREATER_THAN)
+            return selectivityGt(v);
+        if (op == Predicate.Op.LESS_THAN)
+            return 1.0 - selectivityGt(v);
+        if (op == Predicate.Op.LESS_THAN_OR_EQ)
+            return 1.0 - selectivityGt(v) + selectivityEq(v);
+        if (op == Predicate.Op.GREATER_THAN_OR_EQ)
+            return selectivityGt(v) + selectivityEq(v);
+        if (op == Predicate.Op.NOT_EQUALS)
+            return 1.0 - selectivityEq(v);
+
+        // invalid operator
+        return 0.0;
     }
     
     /**
