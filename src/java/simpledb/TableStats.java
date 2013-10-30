@@ -66,9 +66,11 @@ public class TableStats {
      */
     static final int NUM_HIST_BINS = 100;
 
-    private HashMap<String, IntHistogram> intHistMap;
-    private HashMap<String, StringHistogram> stringHistMap;
+    private IntHistogram[] intHistMap;
+    private StringHistogram[] stringHistMap;
     private TupleDesc td;
+    private int numTuples;
+    private int ioCostPerPage;
 
     /**
      * Create a new TableStats object, that keeps track of statistics on each
@@ -90,44 +92,45 @@ public class TableStats {
         // in a single scan of the table.
         // some code goes here
         DbFile f = Database.getCatalog().getDbFile(tableid);
-        DbFileIterator it = f.iterator(null);
-        HashMap<String, Integer> maxMap = new HashMap<String, Integer>();
-        HashMap<String, Integer> minMap = new HashMap<String, Integer>();
-
+        DbFileIterator it = f.iterator(new TransactionId());
         td = f.getTupleDesc();
-        intHistMap = new HashMap<String, IntHistogram>();
-        stringHistMap = new HashMap<String, StringHistogram>();
+        int[] maxMap = new int[td.numFields()];
+        int[] minMap = new int[td.numFields()];
+        this.ioCostPerPage = ioCostPerPage;
+
+        intHistMap = new IntHistogram[td.numFields()];
+        stringHistMap = new StringHistogram[td.numFields()];
+        numTuples = 0;
 
         try {
             it.open();
             // set min and max
             boolean first = true;
             while(it.hasNext()) {
+                numTuples++;
                 Tuple t = it.next();
                 for(int i = 0; i < td.numFields(); i++) {
-                    String fieldName = td.getFieldName(i);
-
                     if (first) {
                         int value;
                         if (td.getFieldType(i) == Type.INT_TYPE) {
                             value = ((IntField) t.getField(i)).getValue();
-                            maxMap.put(fieldName, value);
-                            minMap.put(fieldName, value);
+                            maxMap[i] = value;
+                            minMap[i] = value;
                         } else {
                             continue;
                         }
                     }
 
-                    int max = maxMap.get(fieldName);
-                    int min = minMap.get(fieldName);
+                    int max = maxMap[i];
+                    int min = minMap[i];
 
                     if (td.getFieldType(i) == Type.INT_TYPE) {
                         int value = ((IntField) t.getField(i)).getValue();
                         if (value > max) {
-                            maxMap.put(fieldName, value);
+                            maxMap[i] = value;
                         }
                         if (value < min) {
-                            minMap.put(fieldName, value);
+                            minMap[i] = value;
                         }
                     } else {
                         continue;
@@ -140,12 +143,11 @@ public class TableStats {
 
             // create histograms
             for(int i = 0; i < td.numFields(); i++) {
-                String fieldName = td.getFieldName(i);
                 if (td.getFieldType(i) == Type.INT_TYPE) {
-                    intHistMap.put(fieldName, new IntHistogram(NUM_HIST_BINS, 
-                                minMap.get(fieldName), maxMap.get(fieldName)));
+                    intHistMap[i] = new IntHistogram(NUM_HIST_BINS, 
+                                minMap[i], maxMap[i]);
                 } else if (td.getFieldType(i) == Type.STRING_TYPE){
-                    stringHistMap.put(fieldName, new StringHistogram(NUM_HIST_BINS));
+                    stringHistMap[i] = new StringHistogram(NUM_HIST_BINS);
                 } else {
                     continue;
                 }
@@ -154,21 +156,24 @@ public class TableStats {
             it.rewind();
 
             // add values
+            int sNumTuples = 0;
             while(it.hasNext()) {
                 Tuple t = it.next();
+                sNumTuples++;
                 for(int i = 0; i < td.numFields(); i++) {
-                    String fieldName = td.getFieldName(i);
                     if (td.getFieldType(i) == Type.INT_TYPE) {
-                        IntHistogram hist = intHistMap.get(fieldName);
+                        IntHistogram hist = intHistMap[i];
                         hist.addValue(((IntField) t.getField(i)).getValue());
                     } else if (td.getFieldType(i) == Type.STRING_TYPE) {
-                        StringHistogram hist = stringHistMap.get(fieldName);
+                        StringHistogram hist = stringHistMap[i];
                         hist.addValue(((StringField) t.getField(i)).getValue());
                     } else {
                         continue;
                     }
                 }
             }
+
+            assert sNumTuples == numTuples;
 
             it.close();
         } catch (DbException e) {
@@ -194,7 +199,9 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return 0.0;
+        double tuplesPerPage = BufferPool.PAGE_SIZE / td.getSize();
+        double numPages = (numTuples - 1) / tuplesPerPage + 1;
+        return numPages * ioCostPerPage;
     }
 
     /**
@@ -208,7 +215,7 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        return (int) (numTuples * selectivityFactor);
     }
 
     /**
@@ -223,11 +230,10 @@ public class TableStats {
      * */
     public double avgSelectivity(int field, Predicate.Op op) {
         // some code goes here
-        String fieldName = td.getFieldName(field);
         if (td.getFieldType(field) == Type.INT_TYPE) {
-            return intHistMap.get(fieldName).avgSelectivity();
+            return intHistMap[field].avgSelectivity();
         } else if (td.getFieldType(field) == Type.STRING_TYPE) {
-            return stringHistMap.get(fieldName).avgSelectivity();
+            return stringHistMap[field].avgSelectivity();
         } else {
             return 0.0;
         }
@@ -250,9 +256,9 @@ public class TableStats {
         // some code goes here
         String fieldName = td.getFieldName(field);
         if (td.getFieldType(field) == Type.INT_TYPE) {
-            return intHistMap.get(fieldName).estimateSelectivity(op, ((IntField) constant).getValue());
+            return intHistMap[field].estimateSelectivity(op, ((IntField) constant).getValue());
         } else if (td.getFieldType(field) == Type.STRING_TYPE) {
-            return stringHistMap.get(fieldName).estimateSelectivity(op, ((StringField) constant).getValue());
+            return stringHistMap[field].estimateSelectivity(op, ((StringField) constant).getValue());
         } else {
             return 0.0;
         }
