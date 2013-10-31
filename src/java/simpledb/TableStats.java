@@ -116,8 +116,6 @@ public class TableStats {
                             value = ((IntField) t.getField(i)).getValue();
                             maxMap[i] = value;
                             minMap[i] = value;
-                        } else {
-                            continue;
                         }
                     }
 
@@ -132,10 +130,7 @@ public class TableStats {
                         if (value < min) {
                             minMap[i] = value;
                         }
-                    } else {
-                        continue;
                     }
-
                 }
 
                 first = false;
@@ -148,9 +143,7 @@ public class TableStats {
                                 minMap[i], maxMap[i]);
                 } else if (td.getFieldType(i) == Type.STRING_TYPE){
                     stringHistMap[i] = new StringHistogram(NUM_HIST_BINS);
-                } else {
-                    continue;
-                }
+                } 
             }
 
             it.rewind();
@@ -167,9 +160,7 @@ public class TableStats {
                     } else if (td.getFieldType(i) == Type.STRING_TYPE) {
                         StringHistogram hist = stringHistMap[i];
                         hist.addValue(((StringField) t.getField(i)).getValue());
-                    } else {
-                        continue;
-                    }
+                    } 
                 }
             }
 
