@@ -127,7 +127,12 @@ public class IntHistogram {
     public double avgSelectivity()
     {
         // some code goes here
-        return 1.0;
+        double sum = 0.0;
+        for(int i = 0; i < bucketHeight.length; i++) {
+            sum += bucketHeight[i];
+        }
+
+        return sum / numBuckets;
     }
     
     /**
