@@ -64,7 +64,7 @@ public class IntHistogram {
             return 0.0;
         if (v < min)
             return 0.0;
-        return bucketHeight[getBucketNum(v)] / (interval * ntups);
+        return bucketHeight[getBucketNum(v)] / (Math.max(1, interval) * ntups);
     }
 
     private double selectivityGt(int v) {
@@ -100,9 +100,15 @@ public class IntHistogram {
         if (op == Predicate.Op.LESS_THAN)
             return 1.0 - selectivityGt(v);
         if (op == Predicate.Op.LESS_THAN_OR_EQ)
-            return 1.0 - selectivityGt(v) + selectivityEq(v);
-        if (op == Predicate.Op.GREATER_THAN_OR_EQ)
-            return selectivityGt(v) + selectivityEq(v);
+            return 1.0 - selectivityGt(v);
+        if (op == Predicate.Op.GREATER_THAN_OR_EQ) {
+            double value = selectivityGt(v) + selectivityEq(v);
+            if (value > 1.0)
+                return 1.0;
+            if (value < 0.0)
+                return 0.0;
+            return value;
+        }
         if (op == Predicate.Op.NOT_EQUALS)
             return 1.0 - selectivityEq(v);
 
