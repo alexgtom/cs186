@@ -111,7 +111,7 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic nested-loops
             // join.
-            return -1.0;
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -154,10 +154,38 @@ public class JoinOptimizer {
             String field2PureName, int card1, int card2, boolean t1pkey,
             boolean t2pkey, Map<String, TableStats> stats,
             Map<String, Integer> tableAliasToId) {
-        int card = 1;
-        // some code goes here
-        return card <= 0 ? 1 : card;
+
+
+            if (joinOp == Predicate.Op.LIKE || 
+                    joinOp == Predicate.Op.EQUALS) {
+                if (t1pkey && t2pkey) {
+                    return Math.min(card1, card2);
+                } else {
+                    return Math.max(card1, card2);
+                } 
+            } else if (
+                joinOp == Predicate.Op.LESS_THAN ||
+                joinOp == Predicate.Op.LESS_THAN_OR_EQ ||
+                joinOp == Predicate.Op.GREATER_THAN ||
+                joinOp == Predicate.Op.GREATER_THAN_OR_EQ ||
+                joinOp == Predicate.Op.NOT_EQUALS)  {
+                    double table1avg = avgSelectivity(joinOp, table1Alias, field1PureName, stats, tableAliasToId);
+                    double table2avg = avgSelectivity(joinOp, table2Alias, field2PureName, stats, tableAliasToId);
+                    return (int) (card1 * table1avg * card2 * table2avg);
+            } else {
+            }
+
+        return 0;
     }
+
+    private static double avgSelectivity(Predicate.Op joinOp, String tableAlias,
+            String fieldPureName, Map<String, TableStats> stats, Map<String, Integer> tableAliasToId) {
+        int tableId = tableAliasToId.get(tableAlias);
+        TupleDesc td = Database.getCatalog().getTupleDesc(tableId);
+        String tableName = Database.getCatalog().getTableName(tableId);
+        return stats.get(tableName).avgSelectivity(td.fieldNameToIndex(fieldPureName), joinOp);
+    }
+
 
     /**
      * Helper method to enumerate all of the subsets of a given size of a
