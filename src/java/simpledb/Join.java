@@ -120,6 +120,10 @@ public class Join extends Operator {
         if (child2.hasNext() && child2tuple == null) {
             child2tuple = child2.next();
         }
+        
+        if (child1tuple == null || child2tuple == null) {
+            return null;
+        }
 
         while(true) {
             Tuple t = null;
