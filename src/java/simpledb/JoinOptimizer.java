@@ -155,27 +155,24 @@ public class JoinOptimizer {
             boolean t2pkey, Map<String, TableStats> stats,
             Map<String, Integer> tableAliasToId) {
 
+        if (joinOp == Predicate.Op.LIKE || joinOp == Predicate.Op.EQUALS) {
+            if (t1pkey && t2pkey) 
+                return Math.min(card1, card2);
+            else 
+                return Math.max(card1, card2);
+        } else if (
+            joinOp == Predicate.Op.LESS_THAN ||
+            joinOp == Predicate.Op.LESS_THAN_OR_EQ ||
+            joinOp == Predicate.Op.GREATER_THAN ||
+            joinOp == Predicate.Op.GREATER_THAN_OR_EQ ||
+            joinOp == Predicate.Op.NOT_EQUALS)  {
+                double table1avg = avgSelectivity(joinOp, table1Alias, field1PureName, stats, tableAliasToId);
+                double table2avg = avgSelectivity(joinOp, table2Alias, field2PureName, stats, tableAliasToId);
+                return (int) (card1 * table1avg * card2 * table2avg);
+        } else {
+            return 0;
+        }
 
-            if (joinOp == Predicate.Op.LIKE || 
-                    joinOp == Predicate.Op.EQUALS) {
-                if (t1pkey && t2pkey) {
-                    return Math.min(card1, card2);
-                } else {
-                    return Math.max(card1, card2);
-                } 
-            } else if (
-                joinOp == Predicate.Op.LESS_THAN ||
-                joinOp == Predicate.Op.LESS_THAN_OR_EQ ||
-                joinOp == Predicate.Op.GREATER_THAN ||
-                joinOp == Predicate.Op.GREATER_THAN_OR_EQ ||
-                joinOp == Predicate.Op.NOT_EQUALS)  {
-                    double table1avg = avgSelectivity(joinOp, table1Alias, field1PureName, stats, tableAliasToId);
-                    double table2avg = avgSelectivity(joinOp, table2Alias, field2PureName, stats, tableAliasToId);
-                    return (int) (card1 * table1avg * card2 * table2avg);
-            } else {
-            }
-
-        return 0;
     }
 
     private static double avgSelectivity(Predicate.Op joinOp, String tableAlias,
@@ -247,13 +244,41 @@ public class JoinOptimizer {
 
         // See the project writeup for some hints as to how this function
         // should work.
-
         // some code goes here
-        //Replace the following
-        return joins;
-    }
 
-    // ===================== Private Methods =================================
+        PlanCache pc = new PlanCache();
+        // for (i in 1...|j|):  
+        // First find best plan for single join, then for two joins, etc. 
+        for(int i = 0; i <= joins.size(); i++) {
+            // for s in {all length i subsets of j} 
+            // Looking at a concrete subset of joins
+            for(Set<LogicalJoinNode> s : enumerateSubsets(joins, i)) {
+                // We want to find the best plan for this concrete subset 
+                CostCard bestPlan = new CostCard();
+                bestPlan.cost = Double.MAX_VALUE;
+
+                // for s' in {all length i-1 subsets of s} 
+                for(LogicalJoinNode n : s) {
+                    CostCard subplan = computeCostAndCardOfSubplan(
+                            stats, 
+                            filterSelectivities, 
+                            n, 
+                            s, 
+                            bestPlan.cost, 
+                            pc);
+                    if (subplan != null && subplan.cost < bestPlan.cost)
+                        bestPlan = subplan;
+                }
+
+                if (bestPlan != null)
+                    pc.addPlan(s, bestPlan.cost, bestPlan.card, bestPlan.plan);
+            }
+        }
+        Vector<LogicalJoinNode> plan = pc.getOrder(new HashSet<LogicalJoinNode>(joins));
+        if (explain)
+            printJoins(plan, pc, stats, filterSelectivities);
+        return plan;
+    }
 
     /**
      * This is a helper method that computes the cost and cardinality of joining
