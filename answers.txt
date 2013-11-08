@@ -1,11 +1,109 @@
 Exercise 1
+----------
+
 Step 3: simpledb.Parser.handleQueryStatement()
  - A new logical plan is created from parseQueryLogicalPlan
- - A physical plan is created from the logical plan
+ - A physical plan is created from the logical plan by calling
+ simpledb.LogicalPlan.phtsicalPlan
+ - simpledb.OperatorCardinality is called which estimates the cardinality of the
+ operator
  - A query is returned with the physical and logical plan
+
 
 Step 4: simdledb.Parser.parseQueryLogicalPlan
  - Create a logical plan by evaluating the FROM clause first, 
    the WHERE clause second, and then FILTER, JOIN, GROUPBY, SELECT,
    picking out aggregates, checking the query for validity, and finally
    sorting.
+
+Step 5: simpledb.LogicalPlan.physicalPlan()
+ - Converts the LogicalPlan into a PhysicalPlan represented by a DbIterator
+ - Iterates through all the scan methods to build statistics of the subplans
+ - Iterates throygh the LogicalFilterNodes to estimate the selectivity using
+ TableStats.estimateSelectivity of the filters
+ - Determines the optimal join ordering by calling JoinOptimizer.orderJoins()
+ - Find the best iterator for the logical join given the statistics about the left and
+ right subplans by calling JoinOptimizer.instantiateJoins
+ - Iterate through the SELECT list and apply projections
+ - For the ORDER BY or aggregate, instantiate new OrderBy or Aggregate
+
+Step 6: simpledb.JoinOptimizer.orderJoins()
+ - Complete a efficient join on the specified table
+ - Using dynamic programming, find the best plan for the single join, two joins, etc.
+ - For all subets of length i, look at a concrete subset of joins
+ - Compute cost of each subplan by calling JoinOptimizer.computeCostAndCardOfSubplan
+ - return the optimal subplan according the the cost
+
+Step 7: simbleDb.JoinOptimizer.computerCostandCardofSubplan()
+ - Computes the cost and cardinality of joining a relation to a joinSet
+ - Determines the cost of scanning the relation using TableStats.estimateScanCost 
+ - Determiines the cardinality of hte relation using
+ TableStats.estimateTableCardinality
+ - Calls JoinOptimizer.estimateJoinCost to esimate the cost of the join with one
+ relation as the right subtree and the other relation is the left subtree and vice versa
+ - Calls JoinOptimizer.estimateJoinCardinality to estimate the cardinality of the join
+ - returns all the subplans for all plans of the size joinSet.size() - 1
+
+
+Exercise 6.1
+------------
+
+Query Plan for the 0.1% dataset:
+                           π(d.fname,d.lname),card:1
+                            |
+                           ⨝(a.id=c.pid),card:1
+  __________________________|___________________________
+  |                                                    |
+ σ(a.lname=Spicer),card:1                            ⨝(m.mid=c.mid),card:29729
+  |                                    ________________|_________________
+ σ(a.fname=John),card:1               |                                |
+  |                                   ⨝(d.id=m.did),card:2791         |
+  |                           _________|_________                       |
+  |                           |                 |                     scan(Casts c)
+scan(Actor a)               scan(Director d)  scan(Movie_Director m)
+
+ - The query plan applys the prediecates in the WHERE clause onto Actor because this
+dramatically reduces the number of tuples returned on Actor
+ - Director and Movie_Director are joined together because the cardinatlity of their
+ cross product is smaller than joining Casts and Movie_Director. In other words, there
+ are a lot Casts than Movies and Movie_Directors. So it makes more sense to join on
+ Movies and Movie_Director
+ - We then join Casts to Director x Movie_Director
+ - We take our results from the first step and join them to the previous step. Theres
+ only one actor named John Spicer, so the join will be fast.
+ - The query then perform a projection, stripping out any columns we dont need.
+
+
+Exercise 6.2
+------------
+SELECT a.fname FROM Casts c, Actor a, Movie m WHERE a.id = c.pid AND c.mid = m.id and a.fname='Casey';
+
+                  π(a.fname),card:1
+                   |
+                  ⨝(a.id=c.pid),card:1
+  _________________|_________________
+  |                                 |
+ σ(a.fname=Casey),card:1          ⨝(m.id=c.mid),card:29729
+  |                          _______|________
+scan(Actor a)                |              |
+                           scan(Movie m)  scan(Casts c)
+ - The query plan applys the predicetes int he WHERE clause onto Actor because we are
+ only looking for an actor who has a speicific name. The cardinaltiy of this is only
+ 1.
+ - Next we join Movie on to Casts. We Dont join Actor onto casts because we have
+ already applied a filter to Casts. If we joined on Casts instead, we would be wasting
+ CPU time because we can reduce the cardinality of Casts to 1
+ - Next we take the result from the first step and join it with the previous step
+ - Finally we apply a projection on the results, stripping out any columns we dont
+ need.
+
+
+Writeup
+-------
+
+Discuss and justify any changes you made to the API.
+ - No changes were made to the API
+Describe any missing or incomplete elements of your code.
+ - Nothing is missing or incomplete
+Describe how long you spent on the project, and whether there was anything you found particularly difficult or confusing.
+ - I spend a weekend on the project and did not find anything diffcult or confusing.
