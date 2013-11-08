@@ -277,7 +277,10 @@ public class JoinOptimizer {
         Vector<LogicalJoinNode> plan = pc.getOrder(new HashSet<LogicalJoinNode>(joins));
         if (explain)
             printJoins(plan, pc, stats, filterSelectivities);
-        return plan;
+        if (plan == null)
+            return joins;
+        else
+            return plan;
     }
 
     /**
