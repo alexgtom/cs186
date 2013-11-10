@@ -2,6 +2,7 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -13,6 +14,53 @@ import java.util.*;
  * locks to read/write the page.
  */
 public class BufferPool {
+
+    private class LockManager {
+        private ReentrantReadWriteLock rwl;
+        private Map<TransactionId, ArrayList<PageId>> s;
+
+        public LockManager() {
+            this.rwl = new ReentrantReadWriteLock();
+            this.s = Collections.synchronizedMap(new HashMap<TransactionId, ArrayList<PageId>>());
+        }
+
+        private void add(TransactionId tid, PageId pid) {
+            if (!s.containsKey(tid)) {
+                s.put(tid, new ArrayList<PageId>());
+            }
+
+            s.get(tid).add(pid);
+        }
+
+        private void remove(TransactionId tid, PageId pid) {
+            s.get(tid).remove(pid);
+        }
+        
+        public void readLock(TransactionId tid, PageId pid) {
+            add(tid, pid);
+            rwl.readLock().lock();
+        }
+
+        public void readUnlock(TransactionId tid, PageId pid) {
+            remove(tid, pid);
+            rwl.readLock().unlock();
+        }
+
+        public void writeLock(TransactionId tid, PageId pid) {
+            add(tid, pid);
+            rwl.writeLock().lock();
+        }
+
+        public void writeUnlock(TransactionId tid, PageId pid) {
+            remove(tid, pid);
+            rwl.writeLock().unlock();
+        }
+
+        public boolean holdsLock(TransactionId tid, PageId pid) {
+            return s.get(tid).contains(pid);
+        }
+    }
+
     /** Bytes per page, including header. */
     public static final int PAGE_SIZE = 4096;
 
@@ -23,6 +71,7 @@ public class BufferPool {
 
     private int maxPages;
     private HashMap<PageId, Page> pool;
+    private LockManager lm;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -49,6 +98,8 @@ public class BufferPool {
                 return removeEldest;
             }
         };
+        this.lm = new LockManager();
+
     }
 
     /**
@@ -73,14 +124,18 @@ public class BufferPool {
         // we dont need to check this anymore becuase have an eviction policy
         //if (pool.size() >= maxPages)
         //    throw new DbException("BufferPool has reached limit of " + maxPages);
+        lm.readLock(tid, pid);
         Page page = pool.get(pid);
 
-        if (page != null)
+        if (page != null) {
+            lm.readUnlock(tid, pid);
             return page;
+        }
 
         Catalog catalog = Database.getCatalog();
         page = catalog.getDbFile(pid.getTableId()).readPage(pid);
         pool.put(pid, page);
+        lm.readUnlock(tid, pid);
         return page;
     }
 
@@ -112,7 +167,7 @@ public class BufferPool {
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for proj1
-        return false;
+        return lm.holdsLock(tid, p);
     }
 
     /**
