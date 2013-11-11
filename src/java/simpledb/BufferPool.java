@@ -3,6 +3,7 @@ package simpledb;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.locks.*;
+import java.util.concurrent.*;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -21,9 +22,9 @@ public class BufferPool {
         private Map<PageId, ReentrantReadWriteLock> locks;
 
         public LockManager() {
-            this.reads = Collections.synchronizedMap(new HashMap<PageId, ArrayList<TransactionId>>());
-            this.writes = Collections.synchronizedMap(new HashMap<PageId, TransactionId>());
-            this.locks = Collections.synchronizedMap(new HashMap<PageId, ReentrantReadWriteLock>());
+            this.reads = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
+            this.writes = new ConcurrentHashMap<PageId, TransactionId>();
+            this.locks = new ConcurrentHashMap<PageId, ReentrantReadWriteLock>();
         }
 
         private Lock readLock(PageId pid) {
@@ -86,16 +87,44 @@ public class BufferPool {
             writeUnlock(tid, pid);
         }
 
-        public void transactionComplete(TransactionId tid, boolean commit) {
+        public synchronized void transactionComplete(TransactionId tid, boolean commit) {
+            ArrayList<PageId> pageIds = new ArrayList<PageId>();
             // clear write locks
             for(PageId pid : writes.keySet())
-                if (writes.get(pid) == tid)
+                if (writes.get(pid) == tid) {
                     writeUnlock(tid, pid);
+                    pageIds.add(pid);
+                }
 
             // clear read locks
             for(PageId pid : reads.keySet())
                 if (reads.get(pid).contains(tid))
                     readUnlock(tid, pid);
+            
+            // take care of pages
+            if (commit) {
+                for(Page page : pool.values()) {
+                    if (page.isDirty() == tid) {
+                        try {
+                            flushPage(page.getId());
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            } else {
+                ArrayList<Page> pageList = new ArrayList<Page>();
+                for(Page page : pool.values()) {
+                    pageList.add(page);
+                }
+                
+                for(int i = 0; i < pageList.size(); i++) {
+                    Page page = pageList.get(i);
+                    if (page.isDirty() == tid) {
+                        page.markDirty(false, tid);
+                    }
+                }
+            }
         }
     }
 
@@ -108,7 +137,7 @@ public class BufferPool {
     public static final int DEFAULT_PAGES = 50;
 
     private int maxPages;
-    private HashMap<PageId, Page> pool;
+    private Map<PageId, Page> pool;
     private LockManager lm;
 
     /**
@@ -120,8 +149,8 @@ public class BufferPool {
         // some code goes here
         this.maxPages = numPages;
         // This LinkedHashMap behaives like and LRU
-        this.pool = new LinkedHashMap<PageId, Page>(maxPages + 1, .75F, true) {
-            public boolean removeEldestEntry(Map.Entry eldest) {
+        this.pool = Collections.synchronizedMap(new LinkedHashMap<PageId, Page>(maxPages + 1, .75F, true) {
+            public synchronized boolean removeEldestEntry(Map.Entry eldest) {
                 boolean removeEldest = size() > maxPages;
 
                 if (removeEldest) {
@@ -135,7 +164,7 @@ public class BufferPool {
 
                 return removeEldest;
             }
-        };
+        });
         this.lm = new LockManager();
 
     }
@@ -170,12 +199,14 @@ public class BufferPool {
         Page page = pool.get(pid);
 
         if (page != null) {
+            page.markDirty(false, tid);
             return page;
         }
 
         Catalog catalog = Database.getCatalog();
         page = catalog.getDbFile(pid.getTableId()).readPage(pid);
         pool.put(pid, page);
+        page.markDirty(false, tid);
         return page;
     }
 
@@ -202,6 +233,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for proj1
+        transactionComplete(tid, true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -222,7 +254,7 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for proj1
-        
+        lm.transactionComplete(tid, commit);
     }
 
     /**
@@ -275,9 +307,16 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for proj1
-         for (Iterator<PageId> pageIdIter = pool.keySet().iterator(); pageIdIter.hasNext();) {
-             flushPage(pageIdIter.next());
-         }
+
+        for (Page page : pool.values()) {
+            Catalog catalog = Database.getCatalog();
+            PageId pid = page.getId();
+            DbFile pageFile = catalog.getDbFile(pid.getTableId());
+            if (page.isDirty() != null) {
+                page.markDirty(false, page.isDirty());
+                pageFile.writePage(page);
+            }
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -299,7 +338,7 @@ public class BufferPool {
         // not necessary for proj1
         Catalog catalog = Database.getCatalog();
         DbFile pageFile = catalog.getDbFile(pid.getTableId());
-        Page page = pageFile.readPage(pid);
+        Page page = pool.get(pid);
         if (page.isDirty() != null) {
             page.markDirty(false, page.isDirty());
             pageFile.writePage(page);
@@ -321,9 +360,9 @@ public class BufferPool {
         // some code goes here
         // not necessary for proj1
 
-        // this method is not necessary due to my LRU implementation
-        pool.put(null, null);
-        pool.remove(null);
+        // this method is not necessary due to my lru implementation
+        //pool.put(null, null);
+        //pool.remove(null);
     }
 
 }
