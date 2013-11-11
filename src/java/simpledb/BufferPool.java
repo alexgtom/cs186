@@ -2,7 +2,7 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.*;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -16,48 +16,86 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class BufferPool {
 
     private class LockManager {
-        private ReentrantReadWriteLock rwl;
-        private Map<TransactionId, ArrayList<PageId>> s;
+        private Map<PageId, ArrayList<TransactionId>> reads;
+        private Map<PageId, TransactionId> writes;
+        private Map<PageId, ReentrantReadWriteLock> locks;
 
         public LockManager() {
-            this.rwl = new ReentrantReadWriteLock();
-            this.s = Collections.synchronizedMap(new HashMap<TransactionId, ArrayList<PageId>>());
+            this.reads = Collections.synchronizedMap(new HashMap<PageId, ArrayList<TransactionId>>());
+            this.writes = Collections.synchronizedMap(new HashMap<PageId, TransactionId>());
+            this.locks = Collections.synchronizedMap(new HashMap<PageId, ReentrantReadWriteLock>());
         }
 
-        private void add(TransactionId tid, PageId pid) {
-            if (!s.containsKey(tid)) {
-                s.put(tid, new ArrayList<PageId>());
+        private Lock readLock(PageId pid) {
+            if (!locks.containsKey(pid)) {
+                locks.put(pid, new ReentrantReadWriteLock());
             }
 
-            s.get(tid).add(pid);
+            return locks.get(pid).readLock();
         }
 
-        private void remove(TransactionId tid, PageId pid) {
-            s.get(tid).remove(pid);
+        private Lock writeLock(PageId pid) {
+            if (!locks.containsKey(pid)) {
+                locks.put(pid, new ReentrantReadWriteLock());
+            }
+
+            return locks.get(pid).writeLock();
         }
-        
+
         public void readLock(TransactionId tid, PageId pid) {
-            add(tid, pid);
-            rwl.readLock().lock();
+            if (writes.containsKey(pid) && writes.get(pid) == tid) {
+                return;
+            }
+
+            if (!reads.containsKey(pid)) {
+                reads.put(pid, new ArrayList<TransactionId>());
+            }
+
+            reads.get(pid).add(tid);
+            readLock(pid).lock();
         }
 
         public void readUnlock(TransactionId tid, PageId pid) {
-            remove(tid, pid);
-            rwl.readLock().unlock();
+            if (!reads.containsKey(pid))
+                return;
+            reads.get(pid).remove(tid);
+            readLock(pid).unlock();
         }
 
         public void writeLock(TransactionId tid, PageId pid) {
-            add(tid, pid);
-            rwl.writeLock().lock();
+            if (reads.containsKey(pid) && reads.get(pid).contains(tid) && reads.get(pid).size() == 1) {
+                return;
+            }
+            writes.put(pid, tid);
+            writeLock(pid).lock();
         }
 
         public void writeUnlock(TransactionId tid, PageId pid) {
-            remove(tid, pid);
-            rwl.writeLock().unlock();
+            if (!writes.containsKey(pid))
+                return;
+            writes.remove(pid);
+            writeLock(pid).unlock();
         }
 
         public boolean holdsLock(TransactionId tid, PageId pid) {
-            return s.get(tid).contains(pid);
+            return reads.get(pid).contains(tid) || writes.containsValue(tid);
+        }
+
+        public void releasePage(TransactionId tid, PageId pid) {
+            readUnlock(tid, pid);
+            writeUnlock(tid, pid);
+        }
+
+        public void transactionComplete(TransactionId tid, boolean commit) {
+            // clear write locks
+            for(PageId pid : writes.keySet())
+                if (writes.get(pid) == tid)
+                    writeUnlock(tid, pid);
+
+            // clear read locks
+            for(PageId pid : reads.keySet())
+                if (reads.get(pid).contains(tid))
+                    readUnlock(tid, pid);
         }
     }
 
@@ -124,18 +162,20 @@ public class BufferPool {
         // we dont need to check this anymore becuase have an eviction policy
         //if (pool.size() >= maxPages)
         //    throw new DbException("BufferPool has reached limit of " + maxPages);
-        lm.readLock(tid, pid);
+        if (perm == Permissions.READ_ONLY)
+            lm.readLock(tid, pid);
+        else
+            lm.writeLock(tid, pid);
+
         Page page = pool.get(pid);
 
         if (page != null) {
-            lm.readUnlock(tid, pid);
             return page;
         }
 
         Catalog catalog = Database.getCatalog();
         page = catalog.getDbFile(pid.getTableId()).readPage(pid);
         pool.put(pid, page);
-        lm.readUnlock(tid, pid);
         return page;
     }
 
@@ -151,6 +191,7 @@ public class BufferPool {
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for proj1
+        lm.releasePage(tid, pid);
     }
 
     /**
@@ -181,6 +222,7 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for proj1
+        
     }
 
     /**
