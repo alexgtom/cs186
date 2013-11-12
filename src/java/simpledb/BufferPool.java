@@ -142,6 +142,9 @@ public class BufferPool {
             public synchronized boolean removeEldestEntry(Map.Entry eldest) {
                 boolean removeEldest = size() > maxPages;
 
+                if (((Page) eldest.getValue()).isDirty() != null)
+                    return false;
+
                 if (removeEldest) {
                     // if we remove the page, flush it
                     try {
@@ -151,9 +154,7 @@ public class BufferPool {
                     }
                 }
 
-                return false;
-
-                //return removeEldest;
+                return removeEldest;
             }
         });
         this.lm = new LockManager();
