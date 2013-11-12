@@ -27,23 +27,25 @@ public class BufferPool {
             this.locks = new ConcurrentHashMap<PageId, ReentrantReadWriteLock>();
         }
 
-        private Lock readLock(PageId pid) {
+        private Lock readLock(PageId pid) throws TransactionAbortedException {
+            if (!locks.containsKey(pid)) {
+                locks.put(pid, new ReentrantReadWriteLock());
+            }
+            
+            Lock lock = locks.get(pid).readLock();
+            return lock;
+        }
+
+        private Lock writeLock(PageId pid) throws TransactionAbortedException {
             if (!locks.containsKey(pid)) {
                 locks.put(pid, new ReentrantReadWriteLock());
             }
 
-            return locks.get(pid).readLock();
+            Lock lock = locks.get(pid).writeLock();
+            return lock;
         }
 
-        private Lock writeLock(PageId pid) {
-            if (!locks.containsKey(pid)) {
-                locks.put(pid, new ReentrantReadWriteLock());
-            }
-
-            return locks.get(pid).writeLock();
-        }
-
-        public void readLock(TransactionId tid, PageId pid) {
+        public void readLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
             if (writes.containsKey(pid) && writes.get(pid) == tid) {
                 return;
             }
@@ -56,14 +58,14 @@ public class BufferPool {
             readLock(pid).lock();
         }
 
-        public void readUnlock(TransactionId tid, PageId pid) {
+        public void readUnlock(TransactionId tid, PageId pid) throws TransactionAbortedException {
             if (!reads.containsKey(pid))
                 return;
             reads.get(pid).remove(tid);
             readLock(pid).unlock();
         }
 
-        public void writeLock(TransactionId tid, PageId pid) {
+        public void writeLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
             if (reads.containsKey(pid) && reads.get(pid).contains(tid) && reads.get(pid).size() == 1) {
                 return;
             }
@@ -71,7 +73,7 @@ public class BufferPool {
             writeLock(pid).lock();
         }
 
-        public void writeUnlock(TransactionId tid, PageId pid) {
+        public void writeUnlock(TransactionId tid, PageId pid) throws TransactionAbortedException {
             if (!writes.containsKey(pid))
                 return;
             writes.remove(pid);
@@ -83,8 +85,12 @@ public class BufferPool {
         }
 
         public void releasePage(TransactionId tid, PageId pid) {
-            readUnlock(tid, pid);
-            writeUnlock(tid, pid);
+            try {
+                readUnlock(tid, pid);
+                writeUnlock(tid, pid);
+            } catch (TransactionAbortedException e) {
+                e.printStackTrace();
+            }
         }
 
         public void transactionComplete(TransactionId tid, boolean commit) {
@@ -107,13 +113,21 @@ public class BufferPool {
             // clear write locks
             for(PageId pid : writes.keySet())
                 if (writes.get(pid) == tid) {
-                    writeUnlock(tid, pid);
+                    try {
+                        writeUnlock(tid, pid);
+                    } catch (TransactionAbortedException e) {
+                        e.printStackTrace();
+                    }
                 }
 
             // clear read locks
             for(PageId pid : reads.keySet())
                 if (reads.get(pid).contains(tid))
-                    readUnlock(tid, pid);
+                    try {
+                        readUnlock(tid, pid);
+                    } catch (TransactionAbortedException e) {
+                        e.printStackTrace();
+                    }
         }
     }
 
