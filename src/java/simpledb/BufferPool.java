@@ -20,11 +20,51 @@ public class BufferPool {
         private Map<PageId, ArrayList<TransactionId>> reads;
         private Map<PageId, TransactionId> writes;
         private Map<PageId, ReentrantReadWriteLock> locks;
+        private Map<TransactionId, ArrayList<TransactionId>> depGraph;
 
         public LockManager() {
             this.reads = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
             this.writes = new ConcurrentHashMap<PageId, TransactionId>();
             this.locks = new ConcurrentHashMap<PageId, ReentrantReadWriteLock>();
+            this.depGraph = new ConcurrentHashMap<TransactionId, ArrayList<TransactionId>>();
+        }
+
+        private void addDep(TransactionId tid, PageId pid) {
+            if (!depGraph.containsKey(tid)) {
+                depGraph.put(tid, new ArrayList<TransactionId>());
+            }
+
+            if (reads.containsKey(pid)) {
+                for(TransactionId dep : reads.get(pid)) {
+                    if (dep != tid)
+                        depGraph.get(tid).add(dep);
+                }
+            }
+
+            if (writes.containsKey(pid)) {
+                if (writes.get(pid) != tid)
+                    depGraph.get(tid).add(writes.get(pid));
+            }
+        }
+
+        private void removeDep(TransactionId tid) {
+            depGraph.remove(tid);
+        }
+
+        private boolean hasDeadlock(TransactionId start) throws TransactionAbortedException {
+            ArrayList<TransactionId> q = new ArrayList<TransactionId>();
+            q.addAll(depGraph.get(start));
+            HashSet<TransactionId> visited = new HashSet<TransactionId>();
+            
+            while(q.size() > 0) {
+                TransactionId tid = q.remove(0);
+                q.addAll(depGraph.get(tid));
+                if (visited.contains(tid))
+                    throw new TransactionAbortedException();
+                visited.add(tid);
+            }
+
+            return true;
         }
 
         private Lock readLock(PageId pid) throws TransactionAbortedException {
@@ -55,6 +95,8 @@ public class BufferPool {
             }
 
             reads.get(pid).add(tid);
+            addDep(tid, pid);
+            hasDeadlock(tid);
             readLock(pid).lock();
         }
 
@@ -62,6 +104,7 @@ public class BufferPool {
             if (!reads.containsKey(pid))
                 return;
             reads.get(pid).remove(tid);
+            removeDep(tid);
             readLock(pid).unlock();
         }
 
@@ -70,6 +113,8 @@ public class BufferPool {
                 return;
             }
             writes.put(pid, tid);
+            addDep(tid, pid);
+            hasDeadlock(tid);
             writeLock(pid).lock();
         }
 
@@ -77,6 +122,7 @@ public class BufferPool {
             if (!writes.containsKey(pid))
                 return;
             writes.remove(pid);
+            removeDep(tid);
             writeLock(pid).unlock();
         }
 
