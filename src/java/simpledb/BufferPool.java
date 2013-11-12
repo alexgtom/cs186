@@ -54,14 +54,22 @@ public class BufferPool {
         private boolean hasDeadlock(TransactionId start) throws TransactionAbortedException {
             ArrayList<TransactionId> q = new ArrayList<TransactionId>();
             q.addAll(depGraph.get(start));
-            HashSet<TransactionId> visited = new HashSet<TransactionId>();
+            ArrayList<TransactionId> visited = new ArrayList<TransactionId>();
             
             while(q.size() > 0) {
                 TransactionId tid = q.remove(0);
-                q.addAll(depGraph.get(tid));
-                if (visited.contains(tid))
-                    throw new TransactionAbortedException();
-                visited.add(tid);
+                if (!depGraph.containsKey(tid))
+                    continue;
+
+                for(TransactionId child : depGraph.get(tid)) {
+                    assert child != null;
+                    if (visited.contains(child))
+                        continue;
+                    if (q.contains(child))
+                        throw new TransactionAbortedException();
+                    visited.add(child);
+                    q.add(0, child);
+                }
             }
 
             return true;
