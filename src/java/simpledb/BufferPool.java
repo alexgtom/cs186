@@ -87,44 +87,33 @@ public class BufferPool {
             writeUnlock(tid, pid);
         }
 
-        public synchronized void transactionComplete(TransactionId tid, boolean commit) {
-            ArrayList<PageId> pageIds = new ArrayList<PageId>();
+        public void transactionComplete(TransactionId tid, boolean commit) {
+            // take care of pages
+            if (commit) {
+                try {
+                    flushPages(tid);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                for(Page page : pool.values()) {
+                    if (page.isDirty() != null) {
+                        pool.put(page.getId(), page.getBeforeImage());
+                        page.markDirty(false, tid);
+                    }
+                }
+            }
+
             // clear write locks
             for(PageId pid : writes.keySet())
                 if (writes.get(pid) == tid) {
                     writeUnlock(tid, pid);
-                    pageIds.add(pid);
                 }
 
             // clear read locks
             for(PageId pid : reads.keySet())
                 if (reads.get(pid).contains(tid))
                     readUnlock(tid, pid);
-            
-            // take care of pages
-            if (commit) {
-                for(Page page : pool.values()) {
-                    if (page.isDirty() == tid) {
-                        try {
-                            flushPage(page.getId());
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            } else {
-                ArrayList<Page> pageList = new ArrayList<Page>();
-                for(Page page : pool.values()) {
-                    pageList.add(page);
-                }
-                
-                for(int i = 0; i < pageList.size(); i++) {
-                    Page page = pageList.get(i);
-                    if (page.isDirty() == tid) {
-                        page.markDirty(false, tid);
-                    }
-                }
-            }
         }
     }
 
@@ -162,7 +151,9 @@ public class BufferPool {
                     }
                 }
 
-                return removeEldest;
+                return false;
+
+                //return removeEldest;
             }
         });
         this.lm = new LockManager();
@@ -199,14 +190,12 @@ public class BufferPool {
         Page page = pool.get(pid);
 
         if (page != null) {
-            page.markDirty(false, tid);
             return page;
         }
 
         Catalog catalog = Database.getCatalog();
         page = catalog.getDbFile(pid.getTableId()).readPage(pid);
-        pool.put(pid, page);
-        page.markDirty(false, tid);
+        pool.put(page.getId(), page);
         return page;
     }
 
@@ -275,7 +264,16 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for proj1
-        Database.getCatalog().getDbFile(tableId).insertTuple(tid, t);
+        assert tid != null;
+        
+        ArrayList<Page> dirtyPages = Database.getCatalog().getDbFile(tableId).insertTuple(tid, t);
+        for(Page page : dirtyPages) {
+            assert tid != null;
+            page.markDirty(true, tid);
+            assert tid.equals(page.isDirty()) == true;
+            pool.put(page.getId(), page);
+            assert tid.equals(pool.get(page.getId()).isDirty()) == true;
+        }
     }
 
     /**
@@ -296,7 +294,9 @@ public class BufferPool {
         // some code goes here
         // not necessary for proj1
         int id = t.getRecordId().getPageId().getTableId();
-        Database.getCatalog().getDbFile(id).deleteTuple(tid, t);
+        Page page = Database.getCatalog().getDbFile(id).deleteTuple(tid, t);
+        assert tid != null;
+        page.markDirty(true, tid);
     }
 
     /**
@@ -313,6 +313,7 @@ public class BufferPool {
             PageId pid = page.getId();
             DbFile pageFile = catalog.getDbFile(pid.getTableId());
             if (page.isDirty() != null) {
+                assert page.isDirty() != null;
                 page.markDirty(false, page.isDirty());
                 pageFile.writePage(page);
             }
@@ -340,8 +341,8 @@ public class BufferPool {
         DbFile pageFile = catalog.getDbFile(pid.getTableId());
         Page page = pool.get(pid);
         if (page.isDirty() != null) {
-            page.markDirty(false, page.isDirty());
             pageFile.writePage(page);
+            page.markDirty(false, page.isDirty());
         }
     }
 
@@ -350,6 +351,16 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for proj1
+        ArrayList<Page> pages = new ArrayList<Page>();
+        for(Page page : pool.values()) {
+            pages.add(page);
+        }
+        for(int i = 0; i < pages.size(); i++) {
+            Page page = pages.get(i);
+            if(page.isDirty() == tid) {
+                flushPage(page.getId());
+            }
+        }
     }
 
     /**

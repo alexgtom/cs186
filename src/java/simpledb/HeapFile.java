@@ -123,7 +123,6 @@ public class HeapFile implements DbFile {
                  page = p;
                  pageList.add(page);
                  page.insertTuple(t);
-                 page.markDirty(true, tid);
                  return pageList;
              }
         }
@@ -157,7 +156,6 @@ public class HeapFile implements DbFile {
         HeapPage page = (HeapPage) Database.getBufferPool().getPage(
                 tid, pid, Permissions.READ_WRITE);
         page.deleteTuple(t);
-        page.markDirty(true, tid);
 
         return page;
     }
@@ -215,7 +213,7 @@ public class HeapFile implements DbFile {
             HeapPage currentPage = (HeapPage) Database.getBufferPool().getPage(
                 tid,
                 new HeapPageId(getId(), i),
-                null
+                Permissions.READ_WRITE
             );
             return currentPage.iterator();
         } 
