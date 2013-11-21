@@ -16,174 +16,6 @@ import java.util.concurrent.*;
  */
 public class BufferPool {
 
-    private class LockManager {
-        private Map<PageId, ArrayList<TransactionId>> reads;
-        private Map<PageId, TransactionId> writes;
-        private Map<PageId, ReentrantReadWriteLock> locks;
-        private Map<TransactionId, ArrayList<TransactionId>> depGraph;
-
-        public LockManager() {
-            this.reads = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
-            this.writes = new ConcurrentHashMap<PageId, TransactionId>();
-            this.locks = new ConcurrentHashMap<PageId, ReentrantReadWriteLock>();
-            this.depGraph = new ConcurrentHashMap<TransactionId, ArrayList<TransactionId>>();
-        }
-
-        private void addDep(TransactionId tid, PageId pid) {
-            if (!depGraph.containsKey(tid)) {
-                depGraph.put(tid, new ArrayList<TransactionId>());
-            }
-
-            if (reads.containsKey(pid)) {
-                for(TransactionId dep : reads.get(pid)) {
-                    if (dep != tid)
-                        depGraph.get(tid).add(dep);
-                }
-            }
-
-            if (writes.containsKey(pid)) {
-                if (writes.get(pid) != tid)
-                    depGraph.get(tid).add(writes.get(pid));
-            }
-        }
-
-        private void removeDep(TransactionId tid) {
-            depGraph.remove(tid);
-        }
-
-        private boolean hasDeadlock(TransactionId start) throws TransactionAbortedException {
-            ArrayList<TransactionId> q = new ArrayList<TransactionId>();
-            q.addAll(depGraph.get(start));
-            ArrayList<TransactionId> visited = new ArrayList<TransactionId>();
-            
-            while(q.size() > 0) {
-                TransactionId tid = q.remove(0);
-                if (!depGraph.containsKey(tid))
-                    continue;
-
-                for(TransactionId child : depGraph.get(tid)) {
-                    assert child != null;
-                    if (visited.contains(child))
-                        continue;
-                    if (q.contains(child))
-                        throw new TransactionAbortedException();
-                    visited.add(child);
-                    q.add(0, child);
-                }
-            }
-
-            return true;
-        }
-
-        private Lock readLock(PageId pid) throws TransactionAbortedException {
-            if (!locks.containsKey(pid)) {
-                locks.put(pid, new ReentrantReadWriteLock());
-            }
-            
-            Lock lock = locks.get(pid).readLock();
-            return lock;
-        }
-
-        private Lock writeLock(PageId pid) throws TransactionAbortedException {
-            if (!locks.containsKey(pid)) {
-                locks.put(pid, new ReentrantReadWriteLock());
-            }
-
-            Lock lock = locks.get(pid).writeLock();
-            return lock;
-        }
-
-        public void readLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
-            if (writes.containsKey(pid) && writes.get(pid) == tid) {
-                return;
-            }
-
-            if (!reads.containsKey(pid)) {
-                reads.put(pid, new ArrayList<TransactionId>());
-            }
-
-            reads.get(pid).add(tid);
-            addDep(tid, pid);
-            hasDeadlock(tid);
-            readLock(pid).lock();
-        }
-
-        public void readUnlock(TransactionId tid, PageId pid) throws TransactionAbortedException {
-            if (!reads.containsKey(pid))
-                return;
-            reads.get(pid).remove(tid);
-            removeDep(tid);
-            readLock(pid).unlock();
-        }
-
-        public void writeLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
-            if (reads.containsKey(pid) && reads.get(pid).contains(tid) && reads.get(pid).size() == 1) {
-                return;
-            }
-            writes.put(pid, tid);
-            addDep(tid, pid);
-            hasDeadlock(tid);
-            writeLock(pid).lock();
-        }
-
-        public void writeUnlock(TransactionId tid, PageId pid) throws TransactionAbortedException {
-            if (!writes.containsKey(pid))
-                return;
-            writes.remove(pid);
-            removeDep(tid);
-            writeLock(pid).unlock();
-        }
-
-        public boolean holdsLock(TransactionId tid, PageId pid) {
-            return reads.get(pid).contains(tid) || writes.containsValue(tid);
-        }
-
-        public void releasePage(TransactionId tid, PageId pid) {
-            try {
-                readUnlock(tid, pid);
-                writeUnlock(tid, pid);
-            } catch (TransactionAbortedException e) {
-                e.printStackTrace();
-            }
-        }
-
-        public void transactionComplete(TransactionId tid, boolean commit) {
-            // take care of pages
-            if (commit) {
-                try {
-                    flushPages(tid);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            } else {
-                for(Page page : pool.values()) {
-                    if (page.isDirty() != null) {
-                        pool.put(page.getId(), page.getBeforeImage());
-                        page.markDirty(false, tid);
-                    }
-                }
-            }
-
-            // clear write locks
-            for(PageId pid : writes.keySet())
-                if (writes.get(pid) == tid) {
-                    try {
-                        writeUnlock(tid, pid);
-                    } catch (TransactionAbortedException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-            // clear read locks
-            for(PageId pid : reads.keySet())
-                if (reads.get(pid).contains(tid))
-                    try {
-                        readUnlock(tid, pid);
-                    } catch (TransactionAbortedException e) {
-                        e.printStackTrace();
-                    }
-        }
-    }
 
     /** Bytes per page, including header. */
     public static final int PAGE_SIZE = 4096;
@@ -312,6 +144,21 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for proj1
+        // take care of pages
+        if (commit) {
+            try {
+                flushPages(tid);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            for(Page page : pool.values()) {
+                if (page.isDirty() != null) {
+                    pool.put(page.getId(), page.getBeforeImage());
+                    page.markDirty(false, tid);
+                }
+            }
+        }
         lm.transactionComplete(tid, commit);
     }
 
