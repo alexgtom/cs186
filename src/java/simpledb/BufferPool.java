@@ -89,8 +89,8 @@ public class BufferPool {
             else
                 lm.addReadLock(tid,pid);
         } catch (InterruptedException e) {
-            System.out.println("SDFLKJSDLFKJ");
             e.printStackTrace();
+            return null;
         }
 
         Page page = pool.get(pid);
@@ -119,8 +119,10 @@ public class BufferPool {
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for proj1
-        lm.removeReadLock(tid, pid);
-        lm.removewriteLock(tid, pid);
+        if(lm.holdsReadLock(tid,pid))
+            lm.removeReadLock(tid, pid);
+        if(lm.holdsWriteLock(tid, pid))
+            lm.removewriteLock(tid, pid);
     }
 
     /**
@@ -172,8 +174,7 @@ public class BufferPool {
         while(theIterator.hasNext()) {
             Page page = theIterator.next();
             PageId pid = page.getId();
-            if(lm.holdsReadLock(tid,pid) || lm.holdsWriteLock(tid, pid))
-                releasePage(tid, page.getId());
+            releasePage(tid, page.getId());
         }
     }
 
