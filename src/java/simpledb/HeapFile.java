@@ -258,6 +258,11 @@ public class HeapFile implements DbFile {
 
         public void close() {
             opened = false;
+            try {
+                Database.getBufferPool().transactionComplete(tid);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
