@@ -83,10 +83,15 @@ public class BufferPool {
         // we dont need to check this anymore becuase have an eviction policy
         //if (pool.size() >= maxPages)
         //    throw new DbException("BufferPool has reached limit of " + maxPages);
-        if (perm == Permissions.READ_ONLY)
-            lm.readLock(tid, pid);
-        else
-            lm.writeLock(tid, pid);
+        try {
+            if(perm == Permissions.READ_WRITE)
+                lm.addWriteLock(tid, pid);
+            else
+                lm.addReadLock(tid,pid);
+        } catch (InterruptedException e) {
+            System.out.println("SDFLKJSDLFKJ");
+            e.printStackTrace();
+        }
 
         Page page = pool.get(pid);
 
@@ -112,7 +117,8 @@ public class BufferPool {
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for proj1
-        lm.releasePage(tid, pid);
+        lm.removeReadLock(tid, pid);
+        lm.removewriteLock(tid, pid);
     }
 
     /**
@@ -130,7 +136,7 @@ public class BufferPool {
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for proj1
-        return lm.holdsLock(tid, p);
+        return (lm.holdsReadLock(tid, p) || lm.holdsWriteLock(tid, p));
     }
 
     /**
@@ -159,7 +165,14 @@ public class BufferPool {
                 }
             }
         }
-        lm.transactionComplete(tid, commit);
+
+        Iterator<Page> theIterator = this.pool.values().iterator();
+        while(theIterator.hasNext()) {
+            Page page = theIterator.next();
+            PageId pid = page.getId();
+            if(lm.holdsReadLock(tid,pid) || lm.holdsWriteLock(tid, pid))
+                releasePage(tid, page.getId());
+        }
     }
 
     /**
