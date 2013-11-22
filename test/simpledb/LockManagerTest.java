@@ -25,7 +25,7 @@ public class LockManagerTest {
       lm.printGraph();
       boolean thrown = false;
       try {
-        lm.writeLock(tid2, pid2);
+        lm.writeLock(tid2, pid1);
         lm.printGraph();
       } catch (TransactionAbortedException e) {
           System.out.println("thrown");
