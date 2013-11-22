@@ -101,6 +101,8 @@ public class BufferPool {
 
         Catalog catalog = Database.getCatalog();
         page = catalog.getDbFile(pid.getTableId()).readPage(pid);
+        if (!canEvictPage()) 
+            throw new DbException("Connot evict any pages");
         pool.put(page.getId(), page);
         return page;
     }
@@ -290,6 +292,18 @@ public class BufferPool {
                 flushPage(page.getId());
             }
         }
+    }
+
+    private synchronized boolean canEvictPage() {
+        if (pool.size() < maxPages)
+            return true;
+
+        for(Page page : pool.values()) {
+            if(page.isDirty() == null)
+                return true;
+        }
+
+        return false;
     }
 
     /**
