@@ -159,7 +159,7 @@ public class BufferPool {
             }
         } else {
             for(Page page : pool.values()) {
-                if (page.isDirty() != null) {
+                if (page.isDirty() == tid) {
                     pool.put(page.getId(), page.getBeforeImage());
                     page.markDirty(false, tid);
                 }
