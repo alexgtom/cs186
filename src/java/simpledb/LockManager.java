@@ -4,156 +4,135 @@ import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.sql.Timestamp;
 import java.util.Date;
+import java.io.*;
 
 public class LockManager {
-    private ConcurrentHashMap<PageId, TransactionId> writeMap;
-    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> readMap;
-    private ConcurrentHashMap<TransactionId, ArrayList<PageId>> locks;
-    private ConcurrentHashMap<TransactionId, Integer> counters;
     private static final int TIMEOUT = 10;
-    private static final int MAX_COUNT = 25;
+    private static final int MAX_COUNT = 10;
+    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> reads;
+    private ConcurrentHashMap<TransactionId, ArrayList<PageId>> locks;
+    private ConcurrentHashMap<PageId, TransactionId> writes;
+    private ConcurrentHashMap<TransactionId, Integer> xactsCount;
 
     public LockManager() {
-        writeMap = new ConcurrentHashMap<PageId, TransactionId>();
-        readMap = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
+        writes = new ConcurrentHashMap<PageId, TransactionId>();
+        reads = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
 	    locks = new ConcurrentHashMap<TransactionId, ArrayList<PageId>>();
-	    counters = new ConcurrentHashMap<TransactionId, Integer>();
+	    xactsCount = new ConcurrentHashMap<TransactionId, Integer>();
     }
 
-    public synchronized void addReadLock(TransactionId tid, PageId pid) throws InterruptedException, TransactionAbortedException {
-	    // adding pid to locks, unsure about placement
-	    ArrayList<PageId> pages = new ArrayList<PageId>();
+    private ArrayList<PageId> getPages(TransactionId tid, PageId pid) {
+        ArrayList<PageId> pages;
         if (locks.containsKey(tid)) 
-	       pages = locks.get(tid);
-	    pages.add(pid);
-	    locks.put(tid, pages);       
+	        pages = locks.get(tid);
+        else {
+            pages = new ArrayList<PageId>();
+            locks.put(tid, pages);
+        }
+        return pages;
+    }
 
-	    if (writeMap.containsKey(pid) && writeMap.get(pid) == tid) {
-            ArrayList<TransactionId> transList = readMap.get(pid);
-            if(transList == null) {
-                transList = new ArrayList<TransactionId>();
-                transList.add(tid);
-                readMap.put(pid, transList);
-            } else if(!transList.contains(tid)) {
-                transList.add(tid);
-                readMap.put(pid, transList);
-            }
+    private boolean hasExclusiveLock(TransactionId tid, PageId pid) {
+	    return writes.get(pid) == tid;
+    }
+
+    private ArrayList<TransactionId> getReads(PageId pid) {
+        ArrayList<TransactionId> xacts = reads.get(pid);
+        if (xacts == null)
+            reads.put(pid, new ArrayList<TransactionId>());
+        return reads.get(pid);
+    }
+
+    public synchronized void readLock(TransactionId tid, PageId pid) throws InterruptedException, TransactionAbortedException {
+        getPages(tid, pid).add(pid);
+
+	    if (hasExclusiveLock(tid, pid)) {
             return;
         }
 
         while(true) {
-            if(!writeMap.containsKey(pid)) {
-                ArrayList<TransactionId> transList = readMap.get(pid);
-                if(transList == null) {
-                    transList = new ArrayList<TransactionId>();
-                    transList.add(tid);
-                    readMap.put(pid, transList);
-                    //System.out.println("READ LOCK ADDED BY: " + tid.getId() );
-                     break;
-                } else if(!transList.contains(tid)) {
-                    transList.add(tid);
-                    readMap.put(pid, transList);
-                    //System.out.println("READ LOCK ADDED BY: " + tid.getId() );
-                    break;
-                } 
+            if(!writes.containsKey(pid)) {
+                getReads(pid).add(tid);
+                return;
+            }
+        }
+    }
+
+    private void incrementCounter(TransactionId tid) {
+        xactsCount.put(tid, new Integer(getCount(tid) + 1));
+    }
+
+    private int getCount(TransactionId tid) {
+        if (!xactsCount.containsKey(tid))
+            return 0;
+        else
+            return xactsCount.get(tid).intValue();
+    }
+
+    private boolean canUpgradeLock(TransactionId tid, PageId pid) {
+        return reads.get(pid) != null && reads.get(pid).contains(tid) && reads.get(pid).size() == 1;
+    }
+
+    public synchronized void writeLock(TransactionId tid, PageId pid) throws InterruptedException, TransactionAbortedException {
+        getPages(tid, pid).add(pid);
+
+        while(true) {
+            if (hasExclusiveLock(tid, pid)) {
+                return;
             }
 
-            if (counters.containsKey(tid)) {
-                Integer value = counters.get(tid);
-                int count = value.intValue() + 1;
-                if (count > MAX_COUNT) {
-                    if (locks.containsKey(tid)) {
-                        ArrayList<PageId> array = locks.get(tid);
-                        Object[] pagesArray = array.toArray();
-                        for (int i = 0; i < pagesArray.length; i++) {
-                            PageId processId = (PageId) pagesArray[i];
-                            Database.getBufferPool().releasePage(tid, processId);
-                        }
+            if (canUpgradeLock(tid, pid)) {
+                writes.put(pid, tid);
+            }
+
+            if(!writes.containsKey(pid) && getReads(pid).size() == 0) {
+                writes.put(pid, tid);
+                return;
+            }
+            else {
+                if (getCount(tid) > MAX_COUNT) {
+                    try {
+                        Database.getBufferPool().transactionComplete(tid);
+                    } catch (IOException e) {
+                        e.printStackTrace();
                     }
                     throw new TransactionAbortedException();
                 }
-                counters.put(tid, new Integer(count));
-            } else {
-                counters.put(tid, new Integer(1));
-            }
-            Thread.sleep(TIMEOUT);
-        }
 
-    }
-
-    public synchronized void addWriteLock(TransactionId tid, PageId pid) throws InterruptedException, TransactionAbortedException {
-    	// adding pid to locks, unsure about placement
-    	ArrayList<PageId> pages = new ArrayList<PageId>();
-        if (locks.containsKey(tid)) 
-    	    pages = locks.get(tid);
-    	pages.add(pid);
-    	locks.put(tid, pages); 
-
-        if (readMap.containsKey(pid) && readMap.get(pid).contains(tid) && readMap.get(pid).size() == 1) {
-            writeMap.put(pid, tid);
-        }
-        if(writeMap.get(pid) == tid)
-            return;
-
-        while(true) {
-            ArrayList<TransactionId> transList = readMap.get(pid);
-            if(!writeMap.containsKey(pid) && (transList == null || transList.size() == 0)) {
-                this.addReadLock(tid,pid);
-                writeMap.put(pid, tid);
-                break;
-            }
-            else {
-                if (counters.containsKey(tid)) {
-                    Integer value = counters.get(tid);
-                    int count = value.intValue() + 1;
-                    if (count > MAX_COUNT) {
-                        if (locks.containsKey(tid)) {
-                            ArrayList<PageId> array = locks.get(tid);
-                            Object[] pagesArray = array.toArray();
-                            for (int i = 0; i < pagesArray.length; i++) {
-                                PageId processId = (PageId) pagesArray[i];
-                                Database.getBufferPool().releasePage(tid, processId);
-                            }
-                        }
-                        throw new TransactionAbortedException();
-                    }
-                    counters.put(tid, new Integer(count));
-                } else {
-                    counters.put(tid, new Integer(1));
-                }
+                incrementCounter(tid);
                 Thread.sleep(TIMEOUT);
             }
         }
     }
 
-    public synchronized void removeReadLock(TransactionId tid, PageId pid) {
+    public synchronized void readUnlock(TransactionId tid, PageId pid) {
+        if (!holdsReadLock(tid, pid))
+            return;
+
     	if (locks.containsKey(tid)) {
-    	    ArrayList<PageId> pages = locks.get(tid);
-    	    pages.remove(pid);
+    	    locks.get(tid).remove(pid);
     	}
 
-        ArrayList<TransactionId> transList = readMap.get(pid);
-        transList.remove(tid);
-        readMap.put(pid, transList);
-        //System.out.println("READ LOCK REMOVED BY: " + tid.getId() );
+        getReads(pid).remove(tid);
     }
 
-    public synchronized void removewriteLock(TransactionId tid, PageId pid) {
+    public synchronized void writeUnlock(TransactionId tid, PageId pid) {
+        if (!holdsWriteLock(tid, pid))
+            return;
+
     	if (locks.containsKey(tid)) {
-    	    ArrayList<PageId> pages = locks.get(tid);
-    	    pages.remove(pid);
+    	    locks.get(tid).remove(pid);
     	}
 
-        writeMap.remove(pid);
-        //System.out.println("WRITE LOCK REMOVED BY: " + tid.getId() );
+        writes.remove(pid);
     }
 
     public boolean holdsReadLock(TransactionId tid, PageId pid) {
-        return readMap.get(pid).contains(tid);
+        return reads.get(pid) != null && reads.get(pid).contains(tid);
     }
 
     public boolean holdsWriteLock(TransactionId tid, PageId pid) {
-        return writeMap.get(pid) == tid;
+        return writes.get(pid) == tid;
     }
 
 }

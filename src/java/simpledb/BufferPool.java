@@ -85,9 +85,9 @@ public class BufferPool {
         //    throw new DbException("BufferPool has reached limit of " + maxPages);
         try {
             if(perm == Permissions.READ_WRITE)
-                lm.addWriteLock(tid, pid);
+                lm.writeLock(tid, pid);
             else
-                lm.addReadLock(tid,pid);
+                lm.readLock(tid,pid);
         } catch (InterruptedException e) {
             e.printStackTrace();
             return null;
@@ -119,10 +119,8 @@ public class BufferPool {
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for proj1
-        if(lm.holdsReadLock(tid,pid))
-            lm.removeReadLock(tid, pid);
-        if(lm.holdsWriteLock(tid, pid))
-            lm.removewriteLock(tid, pid);
+        lm.readUnlock(tid, pid);
+        lm.writeUnlock(tid, pid);
     }
 
     /**
