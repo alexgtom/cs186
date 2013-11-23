@@ -215,6 +215,7 @@ public class HeapFile implements DbFile {
                 new HeapPageId(getId(), i),
                 Permissions.READ_WRITE
             );
+            Database.getBufferPool().releasePage(tid, currentPage.getId());
             return currentPage.iterator();
         } 
 
@@ -258,11 +259,6 @@ public class HeapFile implements DbFile {
 
         public void close() {
             opened = false;
-            try {
-                Database.getBufferPool().transactionComplete(tid);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
