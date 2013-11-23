@@ -1,109 +1,18 @@
-Exercise 1
-----------
+ - Describe any design decisions you made, including your deadlock detection policy, locking granularity, etc.
 
-Step 3: simpledb.Parser.handleQueryStatement()
- - A new logical plan is created from parseQueryLogicalPlan
- - A physical plan is created from the logical plan by calling
- simpledb.LogicalPlan.phtsicalPlan
- - simpledb.OperatorCardinality is called which estimates the cardinality of the
- operator
- - A query is returned with the physical and logical plan
+The deadlock detection policy I used was a timeout. If a writer cannot acquire a write lock MAX_COUNT times with TIMEOUT between each trial, we give up and throw and TransactionAbortedException. Locking granulatiry was done on pages instead of tuples because that is easier to implement.
 
 
-Step 4: simdledb.Parser.parseQueryLogicalPlan
- - Create a logical plan by evaluating the FROM clause first, 
-   the WHERE clause second, and then FILTER, JOIN, GROUPBY, SELECT,
-   picking out aggregates, checking the query for validity, and finally
-   sorting.
+ - In part 2.3, we ask you to implement NO STEAL/FORCE buffer management policy and assume that the system won't crash while running transactionComplete. Why does NO STEAL/FORCE and no crashes while processing transactionComplete makes your job easier. In other words, what, what's complicated about implementing STEAL/NO FORCE buffer management policy and what measures do we need to take if our system could crash while running transactionComplete
 
-Step 5: simpledb.LogicalPlan.physicalPlan()
- - Converts the LogicalPlan into a PhysicalPlan represented by a DbIterator
- - Iterates through all the scan methods to build statistics of the subplans
- - Iterates throygh the LogicalFilterNodes to estimate the selectivity using
- TableStats.estimateSelectivity of the filters
- - Determines the optimal join ordering by calling JoinOptimizer.orderJoins()
- - Find the best iterator for the logical join given the statistics about the left and
- right subplans by calling JoinOptimizer.instantiateJoins
- - Iterate through the SELECT list and apply projections
- - For the ORDER BY or aggregate, instantiate new OrderBy or Aggregate
-
-Step 6: simpledb.JoinOptimizer.orderJoins()
- - Complete a efficient join on the specified table
- - Using dynamic programming, find the best plan for the single join, two joins, etc.
- - For all subets of length i, look at a concrete subset of joins
- - Compute cost of each subplan by calling JoinOptimizer.computeCostAndCardOfSubplan
- - return the optimal subplan according the the cost
-
-Step 7: simbleDb.JoinOptimizer.computerCostandCardofSubplan()
- - Computes the cost and cardinality of joining a relation to a joinSet
- - Determines the cost of scanning the relation using TableStats.estimateScanCost 
- - Determiines the cardinality of hte relation using
- TableStats.estimateTableCardinality
- - Calls JoinOptimizer.estimateJoinCost to esimate the cost of the join with one
- relation as the right subtree and the other relation is the left subtree and vice versa
- - Calls JoinOptimizer.estimateJoinCardinality to estimate the cardinality of the join
- - returns all the subplans for all plans of the size joinSet.size() - 1
+If the system could crash during transactionComplete, we have to make sure the dirty pages are written out to disk. If they aren't written out to disk, then a transactionComplete will be recorded, but the data will be lost because of the crash. Because we don't have to worry about crashes during transactionComplete, we never need to worry about a page not getting written out to disk. If the system were allowed to crash during trasnactionComplete, do make sure the dirty pages get written out, we need to implement a log to log everything. From the log we can record what state we are in and implement recovery algorithms discussed in class. In particular, this would invlove rolling back the database to a certain state before the crash and re-running each step after the crash so that the pages are written out to disk. Then the database can resume normal operations.
 
 
-Exercise 6.1
-------------
-
-Query Plan for the 0.1% dataset:
-                           π(d.fname,d.lname),card:1
-                            |
-                           ⨝(a.id=c.pid),card:1
-  __________________________|___________________________
-  |                                                    |
- σ(a.lname=Spicer),card:1                            ⨝(m.mid=c.mid),card:29729
-  |                                    ________________|_________________
- σ(a.fname=John),card:1               |                                |
-  |                                   ⨝(d.id=m.did),card:2791         |
-  |                           _________|_________                       |
-  |                           |                 |                     scan(Casts c)
-scan(Actor a)               scan(Director d)  scan(Movie_Director m)
-
- - The query plan applys the prediecates in the WHERE clause onto Actor because this
-dramatically reduces the number of tuples returned on Actor
- - Director and Movie_Director are joined together because the cardinatlity of their
- cross product is smaller than joining Casts and Movie_Director. In other words, there
- are a lot Casts than Movies and Movie_Directors. So it makes more sense to join on
- Movies and Movie_Director
- - We then join Casts to Director x Movie_Director
- - We take our results from the first step and join them to the previous step. Theres
- only one actor named John Spicer, so the join will be fast.
- - The query then perform a projection, stripping out any columns we dont need.
+ - What ACID properties do these simplifications above aim to guarantee?
+ 
+ The simplification above makes transactions atomic because a transaction either completes or fails. It dosen't "complete" when theres a crash and the pages are written out to disk. It also makes transactions consistent, that is all data written to the database is correct and not currupt. If crashes were allowed, the data could be corrupt (e.g. not updated correctly). It also makes transactions isolated, that is, a crash can affect multiple transations if they were writing to disk. And lastly is makes things durable. Once a transaction is completed, the data will stay there since its written to disk and there are no crashes.
 
 
-Exercise 6.2
-------------
-SELECT a.fname FROM Casts c, Actor a, Movie m WHERE a.id = c.pid AND c.mid = m.id and a.fname='Casey';
+ - Discuss and justify any changes you made to the API.
 
-                  π(a.fname),card:1
-                   |
-                  ⨝(a.id=c.pid),card:1
-  _________________|_________________
-  |                                 |
- σ(a.fname=Casey),card:1          ⨝(m.id=c.mid),card:29729
-  |                          _______|________
-scan(Actor a)                |              |
-                           scan(Movie m)  scan(Casts c)
- - The query plan applys the predicetes int he WHERE clause onto Actor because we are
- only looking for an actor who has a speicific name. The cardinaltiy of this is only
- 1.
- - Next we join Movie on to Casts. We Dont join Actor onto casts because we have
- already applied a filter to Casts. If we joined on Casts instead, we would be wasting
- CPU time because we can reduce the cardinality of Casts to 1
- - Next we take the result from the first step and join it with the previous step
- - Finally we apply a projection on the results, stripping out any columns we dont
- need.
-
-
-Writeup
--------
-
-Discuss and justify any changes you made to the API.
- - No changes were made to the API
-Describe any missing or incomplete elements of your code.
- - Nothing is missing or incomplete
-Describe how long you spent on the project, and whether there was anything you found particularly difficult or confusing.
- - I spend a weekend on the project and did not find anything diffcult or confusing.
+ No changes were made to the API
